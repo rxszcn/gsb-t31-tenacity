@@ -181,14 +181,20 @@ class AsyncRetrying(BaseRetrying):
         raise TypeError("AsyncRetrying object is not iterable")
 
     def __aiter__(self) -> "AsyncRetrying":
-        if not self.enabled:
-            self._retry_state = RetryCallState(self, fn=None, args=(), kwargs={})
-            self._disabled_iter_done = False
-            return self
+        # Iterate over a shallow copy so that concurrent ``async for`` loops
+        # over the same controller each get their own attempt bookkeeping
+        # (retry state, iter state, statistics). The copy shares the
+        # user-supplied configuration objects (stop/wait/retry/callbacks)
+        # with this instance; only the per-run state is independent.
+        copy = self.copy()
+        if not copy.enabled:
+            copy._retry_state = RetryCallState(copy, fn=None, args=(), kwargs={})
+            copy._disabled_iter_done = False
+            return copy
 
-        self.begin()
-        self._retry_state = RetryCallState(self, fn=None, args=(), kwargs={})
-        return self
+        copy.begin()
+        copy._retry_state = RetryCallState(copy, fn=None, args=(), kwargs={})
+        return copy
 
     async def __anext__(self) -> AttemptManager:
         if not self.enabled:
